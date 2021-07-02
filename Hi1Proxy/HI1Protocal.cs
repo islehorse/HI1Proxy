@@ -9,6 +9,7 @@ using System.Net.Sockets;
 using System.Drawing.Imaging;
 using System.Net;
 using Newtonsoft.Json;
+using System.Diagnostics;
 
 namespace Hi1Proxy
 {
@@ -71,6 +72,8 @@ namespace Hi1Proxy
         private const byte PACKET_MOVE = 0x15;
         private const byte PACKET_USERINFO = 0x81;
         private const byte PACKET_SWF = 0x28;
+        private const byte PACKET_OTHER_MOVE = 0x16;
+        private const byte PACKET_INFO = 0x1E;
 
         private const byte PACKET_SWF_3 = 0x29;
         private const byte PACKET_SWF_2 = 0x2A;
@@ -120,6 +123,15 @@ namespace Hi1Proxy
         private static int WalkToX = 0;
         private static int WalkToY = 0;
 
+        private static Stopwatch modsRevengeWatch = new Stopwatch();
+        private static Stopwatch waterBalloonWatch = new Stopwatch();
+        private static Stopwatch isleCardsWatch = new Stopwatch();
+        private static Stopwatch realTimeRiddleWatch = new Stopwatch();
+        private static Stopwatch tackShopGiveawayWatch = new Stopwatch();
+        private static Stopwatch realTimeQuizWatch = new Stopwatch();
+
+
+
         private static int Facing = 0;
         private static bool inProgress = false;
         private static List<TileSetArea> tileSetAreas = new List<TileSetArea>();
@@ -131,6 +143,8 @@ namespace Hi1Proxy
 
         public static Socket HI1Server;
         public static Socket Hi1Client;
+
+        public static Timer AfkTimer;
         public static String DecryptLogin(string encpass)
         {
             string decrypt = "";
@@ -294,6 +308,56 @@ namespace Hi1Proxy
                     ChatMsg = Encoding.UTF8.GetString(Packet).Substring(2, Packet.Length - 3);
                     Console.WriteLine("BOTTOM LEFT: " + ChatMsg);
                     break;
+            }
+
+            if(ChatMsg.StartsWith("<B>MODS' REVENGE:</B>"))
+            {
+                Console.WriteLine("[TIME!] " + modsRevengeWatch.ElapsedMilliseconds.ToString());
+                modsRevengeWatch.Stop();
+                modsRevengeWatch.Reset();
+                modsRevengeWatch.Start();
+            }
+
+
+            if (ChatMsg.StartsWith("<B>ISLE CARD TRADING GAME:</B> You"))
+            {
+                Console.WriteLine("[TIME!] " + isleCardsWatch.ElapsedMilliseconds.ToString());
+                isleCardsWatch.Stop();
+                isleCardsWatch.Reset();
+                isleCardsWatch.Start();
+            }
+
+            if (ChatMsg.StartsWith("<B>WATER BALLOON FIGHT:</B> You"))
+            {
+                Console.WriteLine("[TIME!] " + waterBalloonWatch.ElapsedMilliseconds.ToString());
+                waterBalloonWatch.Stop();
+                waterBalloonWatch.Reset();
+                waterBalloonWatch.Start();
+            }
+
+            if (ChatMsg.StartsWith("<B>CHAT RIDDLE:</B> "))
+            {
+                Console.WriteLine("[TIME!] " + realTimeRiddleWatch.ElapsedMilliseconds.ToString());
+                realTimeRiddleWatch.Stop();
+                realTimeRiddleWatch.Reset();
+                realTimeRiddleWatch.Start();
+            }
+
+            if (ChatMsg.StartsWith("<B>TACK SHOP HORSE GIVEAWAY:</B> A ") && ChatMsg.Contains(" in 2 minutes!!!"))
+            {
+                Console.WriteLine("[TIME!] " + tackShopGiveawayWatch.ElapsedMilliseconds.ToString());
+                tackShopGiveawayWatch.Stop();
+                tackShopGiveawayWatch.Reset();
+                tackShopGiveawayWatch.Start();
+            }
+
+
+            if (ChatMsg.StartsWith("<B>REAL TIME QUIZ:</B> Type"))
+            {
+                Console.WriteLine("[TIME!] " + realTimeQuizWatch.ElapsedMilliseconds.ToString());
+                realTimeQuizWatch.Stop();
+                realTimeQuizWatch.Reset();
+                realTimeQuizWatch.Start();
             }
         }
 
@@ -620,6 +684,37 @@ namespace Hi1Proxy
         }
 
 
+
+        private static void Move()
+        {
+
+            MemoryStream ms = new MemoryStream();
+            ms.WriteByte(PACKET_MOVE);
+            ms.WriteByte(MOVE_LEFT);
+            ms.WriteByte(0x0a);
+            ms.WriteByte(0x00);
+
+            ms.WriteByte(PACKET_MOVE);
+            ms.WriteByte(MOVE_RIGHT);
+            ms.WriteByte(0x0a);
+            ms.WriteByte(0x00);
+
+            ms.Seek(0x00, SeekOrigin.Begin);
+            byte[] Packet = ms.ToArray();
+            ms.Dispose();
+
+            ParseClientRequestPacket(Packet);
+            try
+            {
+                HI1Server.Send(Packet);
+            }
+            catch (Exception)
+            {
+                Console.WriteLine("Huh?");
+            }
+        }
+    
+
         private static void MoveTowards(int newX, int newY)
         {
             Console.WriteLine("MOVE TOWARDS: " + newX.ToString() + " " + newY.ToString());
@@ -739,6 +834,26 @@ namespace Hi1Proxy
             HI1Server.Send(packet);
             ms.Dispose();
         }
+
+        private static void DynamicButtonPacket(string id)
+        {
+            id = id.Replace("\r", "");
+            id = id.Replace("\n", "");
+            byte[] idStr = Encoding.ASCII.GetBytes(id);
+            MemoryStream ms = new MemoryStream();
+
+            ms.WriteByte(0x45);
+            ms.Write(idStr, 0x00, idStr.Length);
+            ms.WriteByte(0x0a);
+            ms.WriteByte(0x00);
+            ms.Seek(0x00, SeekOrigin.Begin);
+            byte[] packet = ms.ToArray();
+
+            ParseClientRequestPacket(packet);
+            HI1Server.Send(packet);
+            ms.Dispose();
+        }
+
         private static void WrapItemPacke(int itemId)
         {
             byte[] idStr = Encoding.ASCII.GetBytes(itemId.ToString());
@@ -901,7 +1016,18 @@ namespace Hi1Proxy
                 }
                 else if(command == ".I")
                 {
-                    GiveItemRequest(Int32.Parse(commandArgs[1]));
+                    try
+                    {
+                        int amount = 1;
+                        amount = Int32.Parse(commandArgs[2]);
+                        for (int i = 0; i < amount; i++)
+                        {
+                            GiveItemRequest(Int32.Parse(commandArgs[1]));
+                        }
+
+                    }
+                    catch (Exception) { };
+
                 }
                 else if(command == ".R")
                 {
@@ -914,6 +1040,14 @@ namespace Hi1Proxy
                 else if(command == ".PO")
                 {
                     PawneerOrderHorsePacket(Int32.Parse(commandArgs[1]));
+                }
+                else if(command == ".AFK")
+                {
+                    AfkTimer = new Timer(new TimerCallback(afkTick), null, 5 * 60 * 1000, 5 * 60 * 1000);
+                }
+                else if(command == ".B")
+                {
+                    DynamicButtonPacket(commandArgs[1]);
                 }
                 else if(command == ".S")
                 {
@@ -999,7 +1133,13 @@ namespace Hi1Proxy
             }
 
         }
-        
+
+        private static void afkTick(object state)
+        {
+            Move();
+            AfkTimer = new Timer(new TimerCallback(afkTick), null, 5 * 60 * 1000, 5 * 60 * 1000);
+        }
+
         public static byte[] GenerateSecCode()
         {
             var i = 0;
@@ -1057,6 +1197,45 @@ namespace Hi1Proxy
             Console.WriteLine("TOP RIGHT: "+TileInfo);
         }
 
+
+        private static void DecodeOtherMovePacket(byte[] packet)
+        {
+            Console.WriteLine("OTHER MOVED!");
+
+            try
+            {
+                int type = packet[1];
+                if (type != 0x21)
+                    return;
+                int X = (packet[2] - 20) * 64 + packet[3] - 20;
+                int Y = (packet[4] - 20) * 64 + packet[5] - 20;
+                int facing = (packet[6] - 20);
+                int charId = (packet[7] - 20) * 64 + packet[8] - 20;
+                string name = Encoding.UTF8.GetString(packet);
+                name = name.Substring(8, name.Length - (8 + 2));
+
+                Console.WriteLine("TYP: " + type);
+                Console.WriteLine("X: " + X);
+                Console.WriteLine("Y: " + Y);
+                Console.WriteLine("facing: " + facing);
+                Console.WriteLine("charId: " + charId);
+                Console.WriteLine("name: " + name);
+
+            }
+            catch (Exception) { 
+            }
+        }
+
+        private static bool DecodeInfoPacket(byte[] Packet)
+        {
+            if(Packet[1] == 0x28 && Packet[2] == 0x14)
+            {
+                int id = Convert.ToInt32(Encoding.UTF8.GetString(Packet).Substring(3));
+                WrapItemPacke(id);
+                return false;
+            }
+            return true;
+        }
         private static bool ParseServerResponsePacket(byte[] Packet)
         {
             bool passiton = true;
@@ -1080,6 +1259,9 @@ namespace Hi1Proxy
                     break;
                 case PACKET_TILESET_AREA:
                     DecodeTileAreasResponsePacket(Packet);
+                    break;
+                case PACKET_OTHER_MOVE:
+                    DecodeOtherMovePacket(Packet);
                     break;
                 case PACKET_SWF_2:
                 case PACKET_SWF_3:
@@ -1114,6 +1296,9 @@ namespace Hi1Proxy
                 case PACKET_MOVE:
                     DecodeMovementPacket(Packet);
                     break;
+                case PACKET_INFO:
+                    return DecodeInfoPacket(Packet);
+
                 default:
                     break;
             }
